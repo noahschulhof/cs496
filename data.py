@@ -20,7 +20,7 @@ class ciFAIR10(torchvision.datasets.CIFAR10):
 
 def get_cifair10_datasets(root='./data', download=True):
     # Standard CIFAR-10 normalization values (https://github.com/kuangliu/pytorch-cifar/issues/19)
-    normalize = transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.2023, 0.1994, 0.2010])
+    normalize = transforms.Normalize(mean=[0.4914, 0.4822, 0.4465], std=[0.229, 0.224, 0.225])
     transform = transforms.Compose([transforms.ToTensor(), normalize,])
     
     train_dataset = ciFAIR10(root=root, train=True, download=download, transform=transform)
