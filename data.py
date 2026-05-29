@@ -9,6 +9,10 @@ import torchvision.datasets
 import torchvision.transforms as transforms
 import torch.utils.data as data
 
+import ssl
+
+ssl._create_default_https_context = ssl._create_unverified_context
+
 class ciFAIR10(torchvision.datasets.CIFAR10):
     base_folder = 'ciFAIR-10'
     url = 'https://github.com/cvjena/cifair/releases/download/v1.0/ciFAIR-10.zip'

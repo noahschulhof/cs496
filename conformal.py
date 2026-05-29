@@ -22,7 +22,7 @@ class ConformalModel(nn.Module):
         self.T, calib_logits = platt(self, calib_loader)
         self.randomized=randomized
         self.allow_zero_sets=allow_zero_sets
-        self.num_classes = len(calib_loader.dataset.dataset.classes)
+        self.num_classes = calib_logits.tensors[0].shape[1]
 
         if kreg == None or lamda == None:
             kreg, lamda, calib_logits = pick_parameters(model, calib_logits, alpha, kreg, lamda, randomized, allow_zero_sets, pct_paramtune, batch_size, lamda_criterion)

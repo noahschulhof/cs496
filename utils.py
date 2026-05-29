@@ -155,13 +155,15 @@ def get_model(modelname):
 
 # Computes logits and targets from a model and loader
 def get_logits_targets(model, loader):
-    logits = torch.zeros((len(loader.dataset), 1000)) # 1000 classes in Imagenet.
+    logits = None
     labels = torch.zeros((len(loader.dataset),))
     i = 0
     print(f'Computing logits for model (only happens once).')
     with torch.no_grad():
         for x, targets in tqdm(loader):
             batch_logits = model(x.cuda()).detach().cpu()
+            if logits is None:
+                logits = torch.zeros((len(loader.dataset), batch_logits.shape[1]))
             logits[i:(i+x.shape[0]), :] = batch_logits
             labels[i:(i+x.shape[0])] = targets.cpu()
             i = i + x.shape[0]
