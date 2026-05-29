@@ -1,13 +1,20 @@
 import torch
 import torchvision.transforms as transforms
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, random_split
 from PIL import Image
 import numpy as np
 import io
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from data import get_cifair10_datasets
+import random
+import pickle
+import os
 
 # CIFAR-10 stats
 CIFAR_MEAN = [0.4914, 0.4822, 0.4465]
-CIFAR_STD  = [0.2023, 0.1994, 0.2010]
+CIFAR_STD  = [0.229, 0.224, 0.225]
 
 # Precompute for clamping in normalized space: (0 - mean) / std and (1 - mean) / std
 CIFAR_MIN = torch.tensor([(0 - m) / s for m, s in zip(CIFAR_MEAN, CIFAR_STD)]).view(3,1,1)
@@ -115,3 +122,136 @@ def jpeg_compression_dataset(dataset, quality=10):
         return (compressed - mean) / std
 
     return PerturbedDataset(dataset, perturb)
+
+def get_data():
+    train_dataset, test_dataset = get_cifair10_datasets()
+    calib_dataset, val_dataset, _ = random_split(test_dataset, [5000, 5000, 0])
+    return train_dataset, calib_dataset, val_dataset
+
+def denormalize(tensor):
+    mean = torch.tensor(CIFAR_MEAN).view(3, 1, 1)
+    std = torch.tensor(CIFAR_STD).view(3, 1, 1)
+    denorm = tensor * std + mean
+    return torch.clamp(denorm, 0, 1)
+
+def add_image_to_plot(tensor, ax, title):
+    img = denormalize(tensor).permute(1, 2, 0).numpy()
+    ax.imshow(img)
+    ax.set_title(title, fontsize=10)
+    ax.axis('off')
+
+def return_one_image_all_perturb(dataset, image_idx=0):
+    # original image
+    original_image, label = dataset[image_idx]
+    class_names = ['airplane', 'automobile', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck']
+    
+    fig, axes = plt.subplots(3, 4, figsize=(16, 12))
+    
+    # Row 1: Original + Gaussian Noise
+    add_image_to_plot(original_image, axes[0, 0], 'Original')    
+    noise_levels = [0.05, 0.1, 0.2]
+    for i, std in enumerate(noise_levels):
+        perturbed_ds = gaussian_noise_dataset(dataset, std=std)
+        perturbed_img, _ = perturbed_ds[image_idx]
+        add_image_to_plot(perturbed_img, axes[0, i+1], f'Gaussian Noise\nstd={std}')
+    
+    # Row 2: Blur variations
+    blur_params = [(3, 1.0), (5, 1.5), (7, 2.0)]
+    add_image_to_plot(original_image, axes[1, 0], 'Original')
+    for i, (kernel, sigma) in enumerate(blur_params):
+        perturbed_ds = blur_dataset(dataset, kernel_size=kernel, sigma=sigma)
+        perturbed_img, _ = perturbed_ds[image_idx]
+        add_image_to_plot(perturbed_img, axes[1, i+1], f'Blur\nkernel={kernel}, σ={sigma}')
+    
+    # Row 3: Brightness, Erasure, JPEG
+    add_image_to_plot(original_image, axes[2, 0], 'Original')
+    
+    # Brightness
+    perturbed_ds = brightness_dataset(dataset, brightness_factor=0.5)
+    perturbed_img, _ = perturbed_ds[image_idx]
+    add_image_to_plot(perturbed_img, axes[2, 1], 'Brightness\nfactor=0.5 (dark)')
+    
+    # Random Erasure
+    perturbed_ds = random_erasure_dataset(dataset, scale=(0.1, 0.3))
+    perturbed_img, _ = perturbed_ds[image_idx]
+    add_image_to_plot(perturbed_img, axes[2, 2], 'Random Erasure\nscale=(0.1, 0.3)')
+    
+    # JPEG Compression
+    perturbed_ds = jpeg_compression_dataset(dataset, quality=10)
+    perturbed_img, _ = perturbed_ds[image_idx]
+    add_image_to_plot(perturbed_img, axes[2, 3], 'JPEG Compression\nquality=10')
+    
+    plt.tight_layout()
+    plt.savefig('example_perturb.png', dpi=150, bbox_inches='tight')
+
+def save_perturbed_test_batches(test_dataset, output_dir='./data'):
+    perturbations = {
+        'gaussian_noise': gaussian_noise_dataset(test_dataset, std=0.1),
+        'blur': blur_dataset(test_dataset, kernel_size=5, sigma=1.5),
+        'brightness': brightness_dataset(test_dataset, brightness_factor=0.5),
+        'erasure': random_erasure_dataset(test_dataset, scale=(0.1, 0.3)),
+        'jpeg': jpeg_compression_dataset(test_dataset, quality=10),
+    }
+    
+    # convert normalized tensor back to uint8 for CIFAR format
+    def tensor_to_cifar_format(tensor):
+        # Denormalize
+        img = denormalize(tensor)  # Now in [0, 1]
+        # Convert to uint8 (0-255)
+        img = (img * 255).byte().numpy()
+        # CIFAR format: (3, 32, 32) -> flatten to (3072,) in R, G, B order
+        # ensure R (1024), G (1024), B (1024) contiguous ordering
+        return img.reshape(3, -1).flatten()
+    
+    for perturb_name, perturbed_dataset in perturbations.items():
+        data_list = []
+        labels_list = []
+        
+        for i in range(len(perturbed_dataset)):
+            img_tensor, label = perturbed_dataset[i]
+            
+            # CIFAR format
+            img_cifar = tensor_to_cifar_format(img_tensor)
+            data_list.append(img_cifar)
+            labels_list.append(label)
+        
+        data_array = np.vstack(data_list)
+        labels_array = np.array(labels_list)
+        
+        batch_dict = {
+            b'data': data_array,
+            b'labels': labels_array,
+            b'batch_label': f'test batch - {perturb_name}'.encode(),
+            b'filenames': [f'{perturb_name}_{i:05d}'.encode() for i in range(len(labels_array))]
+        }
+        
+        # save
+        output_path = os.path.join(output_dir, f'test_batch_{perturb_name}')
+        with open(output_path, 'wb') as f:
+            pickle.dump(batch_dict, f)
+
+if __name__ == "__main__":
+    _, test_dataset = get_cifair10_datasets(root='./data', download=True)
+    out_dir = './data'
+    os.makedirs(out_dir, exist_ok=True)
+
+    # save a small example visualization
+    idx = random.randint(0, len(test_dataset)-1)
+    return_one_image_all_perturb(test_dataset, image_idx=idx)
+    print("Saved example of perturbed image: example_perturb.png")
+
+    print("Saving perturbed test batches...")
+    save_perturbed_test_batches(test_dataset, output_dir=out_dir)
+    print("Done")
+
+    # remove downloaded ciFAIR-10.zip file and batch files in ciFAIR-10 directory
+    zip_path = os.path.join('./data', 'ciFAIR-10.zip')
+    if os.path.exists(zip_path):
+        os.remove(zip_path)
+    ciFAIR_dir = os.path.join('./data', 'ciFAIR-10')
+    if os.path.exists(ciFAIR_dir):
+        for filename in os.listdir(ciFAIR_dir):
+            file_path = os.path.join(ciFAIR_dir, filename)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+        os.rmdir(ciFAIR_dir)
