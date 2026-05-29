@@ -50,3 +50,10 @@ if __name__ == "__main__":
     zip_path = os.path.join('./data', ciFAIR10.filename)
     if os.path.exists(zip_path):
         os.remove(zip_path)
+
+    # delete ciFAIR-10 data directory and move all files up
+    data_dir = os.path.join('./data', ciFAIR10.base_folder)
+    if os.path.exists(data_dir):
+        for filename in os.listdir(data_dir):
+            os.rename(os.path.join(data_dir, filename), os.path.join('./data', filename))
+        os.rmdir(data_dir)
