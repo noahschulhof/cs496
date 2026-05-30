@@ -38,6 +38,29 @@ parser.add_argument('--head_lr', metavar='HEADLR', type=float, help='learning ra
 parser.add_argument('--seed', metavar='SEED', type=int, help='random seed', default=0)
 
 
+class ResizeDataset(torch.utils.data.Dataset):
+    def __init__(self, dataset, size):
+        self.dataset = dataset
+        self.size = size
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        image, label = self.dataset[idx]
+        image = torch.nn.functional.interpolate(
+            image.unsqueeze(0),
+            size=self.size,
+            mode='bilinear',
+            align_corners=False,
+        ).squeeze(0)
+        return image, label
+
+
+def resize_dataset(dataset, modelname):
+    return ResizeDataset(dataset, (299, 299))
+
+
 def _extract_logits(output):
     if isinstance(output, tuple):
         first = output[0]
@@ -122,13 +145,17 @@ if __name__ == "__main__":
     )
 
     # Initialize loaders 
-    head_train_loader = torch.utils.data.DataLoader(cifair_head_train_data, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers)
-    calib_loader = torch.utils.data.DataLoader(cifair_calib_data, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers)
+    base_head_train_loader = torch.utils.data.DataLoader(cifair_head_train_data, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers)
+    base_calib_loader = torch.utils.data.DataLoader(cifair_calib_data, batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers)
+
+    inception_head_train_loader = torch.utils.data.DataLoader(resize_dataset(cifair_head_train_data), batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers)
+    inception_calib_loader = torch.utils.data.DataLoader(resize_dataset(cifair_calib_data), batch_size=args.batch_size, shuffle=True, pin_memory=True, num_workers=args.num_workers)
+    inception_val_data = resize_dataset(cifair_val_data)
 
     cudnn.benchmark = True
 
     # Get the models
-    modelnames = ['ResNeXt101','ResNet152','ResNet101','ResNet50','ResNet18','DenseNet161','VGG16','Inception','ShuffleNet']
+    modelnames = ['Inception', 'ResNeXt101','ResNet152','ResNet101','ResNet50','ResNet18','DenseNet161','VGG16','ShuffleNet']
     alphas = [0.05, 0.10]
     predictors = ['Fixed','Naive', 'APS', 'RAPS']
 
@@ -141,17 +168,42 @@ if __name__ == "__main__":
         'jpeg': jpeg_compression_dataset(cifair_val_data, quality=10),
     }
 
+    inception_perturbations = {
+        'clean': inception_val_data,
+        'gaussian_noise': gaussian_noise_dataset(inception_val_data, std=0.1),
+        'blur': blur_dataset(inception_val_data, kernel_size=5, sigma=1.5),
+        'brightness': brightness_dataset(inception_val_data, brightness_factor=0.5),
+        'erasure': random_erasure_dataset(inception_val_data, scale=(0.1, 0.3)),
+        'jpeg': jpeg_compression_dataset(inception_val_data, quality=10),
+    }
+
     perturb_loaders = {name: torch.utils.data.DataLoader(perturb_dataset,
                                                         batch_size=args.batch_size,
                                                         shuffle=True,
                                                         pin_memory=True,
                                                         num_workers=args.num_workers) 
                         for name, perturb_dataset in perturbations.items()}
+
+    inception_perturb_loaders = {name: torch.utils.data.DataLoader(perturb_dataset,
+                                                        batch_size=args.batch_size,
+                                                        shuffle=True,
+                                                        pin_memory=True,
+                                                        num_workers=args.num_workers)
+                        for name, perturb_dataset in inception_perturbations.items()}
     
     cols = ["Model","Predictor","Alpha","Perturbation","Top1","Top5","Coverage","Size"]
     results = pd.DataFrame(columns = cols)
 
     for modelname in modelnames:
+        if modelname == 'Inception':
+            pertub_dict = inception_perturb_loaders
+            calib_loader = inception_calib_loader
+            head_train_loader = inception_head_train_loader
+        else:
+            pertub_dict = perturb_loaders
+            calib_loader = base_calib_loader
+            head_train_loader = base_head_train_loader
+
         # Load pretrained backbone and adapt only the output layer to 10 classes.
         base_model = get_model(modelname).cuda()
         adapt_output_layer_to_10_classes(base_model, modelname)
@@ -189,7 +241,7 @@ if __name__ == "__main__":
 
             print("Model calibrated and conformalized! Now evaluate over remaining data.")
 
-            for perturb_name, perturb_loader in perturb_loaders.items():
+            for perturb_name, perturb_loader in pertub_dict.items():
                 print(f'Evaluating on perturbation: {perturb_name}...')
                 
                 top1_avg, top5_avg, coverage_avg, size_avg = validate(perturb_loader, conformal_model, print_bool=False)
