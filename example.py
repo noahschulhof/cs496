@@ -141,6 +141,13 @@ if __name__ == "__main__":
         'jpeg': jpeg_compression_dataset(cifair_val_data, quality=10),
     }
 
+    perturb_loaders = {name: torch.utils.data.DataLoader(perturb_dataset,
+                                                        batch_size=args.batch_size,
+                                                        shuffle=True,
+                                                        pin_memory=True,
+                                                        num_workers=args.num_workers) 
+                        for name, perturb_dataset in perturbations.items()}
+    
     cols = ["Model","Predictor","Alpha","Perturbation","Top1","Top5","Coverage","Size"]
     results = pd.DataFrame(columns = cols)
 
@@ -182,15 +189,9 @@ if __name__ == "__main__":
 
             print("Model calibrated and conformalized! Now evaluate over remaining data.")
 
-            for perturb_name, perturb_dataset in perturbations.items():
+            for perturb_name, perturb_loader in perturb_loaders.items():
                 print(f'Evaluating on perturbation: {perturb_name}...')
-                perturb_loader = torch.utils.data.DataLoader(
-                    perturb_dataset,
-                    batch_size=args.batch_size,
-                    shuffle=True,
-                    pin_memory=True,
-                    num_workers=args.num_workers,
-                )
+                
                 top1_avg, top5_avg, coverage_avg, size_avg = validate(perturb_loader, conformal_model, print_bool=False)
 
                 results = pd.concat([results,

@@ -204,21 +204,27 @@ def gcq(scores, tau, I, ordered, cumsum, penalties, randomized, allow_zero_sets)
 
 # Get the 'p-value'
 def get_tau(score, target, I, ordered, cumsum, penalty, randomized, allow_zero_sets): # For one example
-    idx = np.where(I==target)
-    tau_nonrandom = cumsum[idx]
+    idx = np.where(I == target)
+    # Work with scalar indices so we return a scalar tau, not a length-1 array.
+    col_idx = int(idx[1][0])
+    tau_nonrandom = float(cumsum[0, col_idx])
 
     if not randomized:
-        return tau_nonrandom + penalty[0]
+        return tau_nonrandom + float(penalty[0])
     
     U = np.random.random()
 
-    if idx == (0,0):
+    if col_idx == 0:
         if not allow_zero_sets:
-            return tau_nonrandom + penalty[0]
+            return tau_nonrandom + float(penalty[0])
         else:
-            return U * tau_nonrandom + penalty[0] 
+            return U * tau_nonrandom + float(penalty[0])
     else:
-        return U * ordered[idx] + cumsum[(idx[0],idx[1]-1)] + (penalty[0:(idx[1][0]+1)]).sum()
+        return (
+            U * float(ordered[0, col_idx])
+            + float(cumsum[0, col_idx - 1])
+            + float((penalty[0:(col_idx + 1)]).sum())
+        )
 
 # Gets the histogram of Taus. 
 def giq(scores, targets, I, ordered, cumsum, penalties, randomized, allow_zero_sets):
