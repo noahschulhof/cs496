@@ -206,7 +206,10 @@ if __name__ == "__main__":
                                                   columns=cols)],
                                     ignore_index=True)
 
-            print(results)
+                with open('results.txt', 'a') as f:
+                    f.write(f'{modelname}\t{predictor}\t{alpha}\t{perturb_name}\t{top1_avg}\t{top5_avg}\t{coverage_avg}\t{size_avg}\n')
+			
+            print(results.tail())
         
     print("Complete!")
     results.to_csv('results.csv', index=False)
