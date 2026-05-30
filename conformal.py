@@ -5,10 +5,16 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as tdata
 import pandas as pd
-import time
 from tqdm import tqdm
 from utils import validate, get_logits_targets, sort_sum
-import pdb
+
+def quantile_higher(x, q):
+    """Compat wrapper for NumPy quantile API across versions."""
+    try:
+        return np.quantile(x, q, method='higher')
+    except TypeError:
+        return np.quantile(x, q, interpolation='higher')
+    
 
 # Conformalize a model with a calibration set.
 # Save it to a file in .cache/modelname
@@ -64,7 +70,7 @@ def conformal_calibration(cmodel, calib_loader):
 
             E = np.concatenate((E,giq(scores,targets,I=I,ordered=ordered,cumsum=cumsum,penalties=cmodel.penalties,randomized=True, allow_zero_sets=True)))
             
-        Qhat = np.quantile(E,1-cmodel.alpha,interpolation='higher')
+        Qhat = quantile_higher(E,1-cmodel.alpha)
 
         return Qhat 
 
@@ -146,7 +152,7 @@ def conformal_calibration_logits(cmodel, calib_loader):
 
             E = np.concatenate((E,giq(scores,targets,I=I,ordered=ordered,cumsum=cumsum,penalties=cmodel.penalties,randomized=True,allow_zero_sets=True)))
             
-        Qhat = np.quantile(E,1-cmodel.alpha,interpolation='higher')
+        Qhat = quantile_higher(E,1-cmodel.alpha)
 
         return Qhat 
 
@@ -241,7 +247,7 @@ def giq(scores, targets, I, ordered, cumsum, penalties, randomized, allow_zero_s
 ### AUTOMATIC PARAMETER TUNING FUNCTIONS
 def pick_kreg(paramtune_logits, alpha):
     gt_locs_kstar = np.array([np.where(np.argsort(x[0]).flip(dims=(0,)) == x[1])[0][0] for x in paramtune_logits])
-    kstar = np.quantile(gt_locs_kstar, 1-alpha, interpolation='higher') + 1
+    kstar = quantile_higher(gt_locs_kstar, 1-alpha) + 1
     return kstar 
 
 def pick_lamda_size(model, paramtune_loader, alpha, kreg, randomized, allow_zero_sets):
