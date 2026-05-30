@@ -15,6 +15,6 @@
 module purge
 module load python-anaconda3/2019.10
 eval "$(conda shell.bash hook)"
-conda activate torch_env
+conda activate /projects/e32998/env
 
 python3 example.py
