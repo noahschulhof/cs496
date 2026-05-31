@@ -1,0 +1,7 @@
+Perturbation,Top1,Top5,Coverage,Size
+clean,0.501,0.909,0.928,5.178
+gaussian_noise,0.415,0.851,0.872,5.486
+brightness,0.407,0.857,0.91,5.802
+erasure,0.332,0.824,0.852,5.661
+jpeg,0.32,0.802,0.87,6.057
+blur,0.311,0.789,0.858,5.842

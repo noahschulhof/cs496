@@ -1,0 +1,5 @@
+Predictor,Coverage,Size
+Naive,0.885,5.722
+Fixed,0.885,5.719
+APS,0.885,5.717
+RAPS,0.872,5.526
