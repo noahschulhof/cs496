@@ -36,6 +36,7 @@ parser.add_argument('--num_train_head', metavar='NTRAINHEAD', type=int, help='nu
 parser.add_argument('--head_epochs', metavar='HEADEPOCHS', type=int, help='epochs to train the 10-class output layer', default=10)
 parser.add_argument('--head_lr', metavar='HEADLR', type=float, help='learning rate for head-only training', default=1e-2)
 parser.add_argument('--seed', metavar='SEED', type=int, help='random seed', default=0)
+parser.add_argument('--output', metavar='OUTPUT', type=str, help='output TXT file for results', default='results.txt')
 
 
 class ResizeDataset(torch.utils.data.Dataset):
@@ -57,7 +58,7 @@ class ResizeDataset(torch.utils.data.Dataset):
         return image, label
 
 
-def resize_dataset(dataset, modelname):
+def resize_dataset(dataset):
     return ResizeDataset(dataset, (299, 299))
 
 
@@ -258,10 +259,10 @@ if __name__ == "__main__":
                                                   columns=cols)],
                                     ignore_index=True)
 
-                with open('results.txt', 'a') as f:
+                with open(args.output, 'a') as f:
                     f.write(f'{modelname}\t{predictor}\t{alpha}\t{perturb_name}\t{top1_avg}\t{top5_avg}\t{coverage_avg}\t{size_avg}\n')
 			
             print(results.tail())
         
     print("Complete!")
-    results.to_csv('results.csv', index=False)
+    results.to_csv(args.output.replace('.txt', '.csv'), index=False)
