@@ -86,19 +86,49 @@ The `ConformalModel` object takes a second boolean flag `allow_zero_sets`. When 
 See the discussion below for picking `alpha`, `kreg`, and `lamda` manually.
 
 ## Reproducing Our Results
-The output of `example.py` should be:
-```
-Begin Platt scaling.
-Computing logits for model (only happens once).
-100%|███████████████████████████████████████| 79/79 [02:24<00:00,  1.83s/it]
-Optimal T=1.1976691484451294
-Model calibrated and conformalized! Now evaluate over remaining data.
-N: 40000 | Time: 1.686 (2.396) | Cvg@1: 0.766 (0.782) | Cvg@5: 0.969 (0.941) | Cvg@RAPS: 0.891 (0.914) | Size@RAPS: 2.953 (2.982)
-Complete!
-```
-The values in parentheses are running averages. The preceding values are only for the most recent batch. The timing values will be different on your system, but the rest of the numbers should be exactly the same. The progress bar may print over many lines if your terminal window is small. 
 
-The expected outputs of the experiments are stored in `experiments/outputs`, and they are exactly identical to the results reported in our paper. You can reproduce the results by executing the python scripts in './experiments/' after you have installed our dependencies. For Table 2, we used the `matched-frequencies` version of ImageNet-V2. 
+This section describes how to reproduce the benchmarking results. The experiment evaluates nine ImageNet-pretrained models fine-tuned on ciFAIR-10 under four conformal predictors (Fixed, Naive, APS, RAPS), two error rates (alpha=0.05 and alpha=0.10), and six input conditions (clean, gaussian noise, blur, brightness reduction, random erasure, JPEG compression).
+
+### Setup
+
+Install the conda environment and packages from the root directory:
+
+```
+conda env create -f environment.yml
+conda activate conformal
+pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116
+```
+### Collect data and implement perturbations
+
+```
+python3 data.py
+python3 perturb.py
+```
+
+### Running the experiment
+
+Run the following command from the root directory. A GPU is required. The experiment trains a 10-class output layer on top of each pretrained backbone and then conformalizes each model across all predictor and perturbation combinations.
+
+```
+python3 -u example.py --output results/results_final.txt
+```
+
+When the run completes, two files are written:
+
+- `results/results_final.txt` — tab-separated raw results (Model, Predictor, Alpha, Perturbation, Top1, Top5, Coverage, Size)
+- `results/results_final.csv` — same data in CSV format
+
+The full results file contains 432 rows (9 models x 4 predictors x 2 alpha values x 6 perturbation conditions).
+
+### Generating the aggregated tables
+
+Open and run all cells in `agg.ipynb` from the root directory. The notebook reads `results/results_final.csv` and writes the following files:
+
+- `results/perturb_agg.csv` — mean metrics grouped by perturbation type
+- `results/model_agg_clean.csv` — mean metrics grouped by model on clean data only
+- `results/model_agg.csv` — mean metrics grouped by model on perturbed data only, using the clean-data model ranking
+- `results/conformal_agg.csv` — mean coverage and set size grouped by conformal predictor
+- `results/table.csv` — full pivot table of coverage and size by model, perturbation, and predictor, merged with per-condition accuracy
 
 ## Picking `alpha`, `kreg`, and `lamda`
 
